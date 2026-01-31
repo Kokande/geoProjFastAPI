@@ -15,12 +15,13 @@ class PointDict(TypedDict):
 
 
 async def haversine(lat1, lon1, lat2, lon2):
+    """Вычисляет расстояние между двумя точками по формуле Хаверсина."""
     fi1 = lat1 * math.pi / 180
     fi2 = lat2 * math.pi / 180
     delta_fi = (lat2 - lat1) * math.pi / 180
     delta_lambda = (lon2 - lon1) * math.pi / 180
 
-    a = math.sin(delta_fi/2)**2 + math.cos(fi1) * math.cos(fi2) * \
+    a = math.sin(delta_fi/2)**2 + math.cos(fi1) * math.cos(fi2) * \\
         math.sin(delta_lambda/2)**2
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
@@ -28,24 +29,33 @@ async def haversine(lat1, lon1, lat2, lon2):
     return d
 
 
-@app.get("/get_all_data")
+@app.get(
+    "/get_all_data",
+    description="Возвращает все данные о расстоянии, максимальной скорости, средней скорости и средней скорости поворота."
+)
 async def get_all_data(data: List[PointDict]):
-    return {**(await get_distance(data)),
-            **(await get_max_speed(data)),
-            **(await get_average_speed(data)),
-            **(await get_average_speed_turn(data))}
+    return {
+        **(await get_distance(data)),
+        **(await get_max_speed(data)),
+        **(await get_average_speed(data)),
+        **(await get_average_speed_turn(data))
+    }
 
 
-"""
-Расстояние Хаверсина в метрах
-"""
-@app.get("/get_distance")
+@app.get(
+    "/get_distance",
+    description="Рассчитывает общее пройденное расстояние между всеми точками данных."
+)
 async def get_distance(data: List[PointDict]):
+    """
+    Расстояние Хаверсина в метрах.
+    Возвращает объект с полем distance — общим расстоянием между всеми точками.
+    """
     res = {'distance': 0}
     if len(data) < 2:
         return res
 
-    data = list(sorted(data, key=lambda x: x['timestamp']))
+    data = sorted(data, key=lambda x: x['timestamp'])
     for i in range(1, len(data)):
         res['distance'] += await haversine(data[i - 1]['lat'], data[i - 1]['lon'],
                                            data[i]['lat'], data[i]['lon'])
@@ -53,52 +63,65 @@ async def get_distance(data: List[PointDict]):
     return res
 
 
-"""
-Максимальная скорость среди всех последовательных пар точек
-"""
-@app.get("/get_max_speed")
+@app.get(
+    "/get_max_speed",
+    description="Находит максимальную скорость среди всех последовательных пар точек."
+)
 async def get_max_speed(data: List[PointDict]):
+    """
+    Максимальная скорость среди всех последовательных пар точек.
+    Возвращает объект с полем max_speed — наибольшей скоростью.
+    """
     res = {'max_speed': 0}
     if len(data) < 2:
         return res
 
-    data = list(sorted(data, key=lambda x: x['timestamp']))
+    data = sorted(data, key=lambda x: x['timestamp'])
     for i in range(1, len(data)):
         s = await haversine(data[i - 1]['lat'], data[i - 1]['lon'],
                             data[i]['lat'], data[i]['lon'])
         t = data[i]['timestamp'] - data[i - 1]['timestamp']
-        if res['max_speed'] < s / t:
-            res['max_speed'] = s / t
+        speed = s / t
+        if res['max_speed'] < speed:
+            res['max_speed'] = speed
     return res
 
 
-"""
-Средняя скорость s/t
-"""
-@app.get("/get_average_speed")
+@app.get(
+    "/get_average_speed",
+    description="Рассчитывает среднюю скорость движения."
+)
 async def get_average_speed(data: List[PointDict]):
+    """
+    Средняя скорость s/t.
+    Возвращает объект с полем average_speed — средним значением скорости.
+    """
     res = {'average_speed': 0}
     if len(data) < 2:
         return res
 
-    data = list(sorted(data, key=lambda x: x['timestamp']))
-    s = (await get_distance(data))['distance']
-    t = data[-1]['timestamp'] - data[0]['timestamp']
-    res['average_speed'] = s / t
+    data = sorted(data, key=lambda x: x['timestamp'])
+    total_distance = (await get_distance(data))['distance']
+    time_difference = data[-1]['timestamp'] - data[0]['timestamp']
+    res['average_speed'] = total_distance / time_difference
 
     return res
 
 
-"""
-Средняя скорость в повороте - скорость изменения угла вектора скорости
-"""
-@app.get("/get_average_speed_turn")
+@app.get(
+    "/get_average_speed_turn",
+    description="Рассчитывает среднюю скорость изменения направления движения."
+)
 async def get_average_speed_turn(data: List[PointDict]):
+    """
+    Средняя скорость в повороте - скорость изменения угла вектора скорости.
+    Возвращает объект с полем average_speed_turn — средним изменением угла за единицу времени.
+    """
     res = {'average_speed_turn': 0}
     if len(data) < 3:
         return res
 
-    data = list(sorted(data, key=lambda x: x['timestamp']))
+    data = sorted(data, key=lambda x: x['timestamp'])
     fi = 0
     for i in range(2, len(data)):
         v1lat = ((data[i - 1]['lat'] - data[i - 2]['lat']) * R /
@@ -107,7 +130,7 @@ async def get_average_speed_turn(data: List[PointDict]):
                  (data[i - 1]['timestamp'] - data[i - 2]['timestamp']))
         v2lat = ((data[i]['lat'] - data[i - 1]['lat']) * R /
                  (data[i]['timestamp'] - data[i - 1]['timestamp']))
-        v2lon = ((data[i]['lon'] - data[i - 1]['lon']) * R/
+        v2lon = ((data[i]['lon'] - data[i - 1]['lon']) * R /
                  (data[i]['timestamp'] - data[i - 1]['timestamp']))
 
         v1abs = math.sqrt(v1lon**2 + v1lat**2)
@@ -122,4 +145,3 @@ async def get_average_speed_turn(data: List[PointDict]):
 
     res['average_speed_turn'] = fi / (data[-1]['timestamp'] - data[1]['timestamp'])
     return res
-
